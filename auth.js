@@ -5,7 +5,7 @@
 (function() {
   "use strict";
 
-  const API_URL = "https://edupath1-github-io.onrender.com";
+  const API_URL = "https://edupath2-github-io.onrender.com";
   const TOKEN_KEY = "edupath_token";
   const USER_KEY = "edupath_user";
   const REFRESH_KEY = "edupath_refresh";
