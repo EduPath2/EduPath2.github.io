@@ -15,8 +15,10 @@ from supabase import create_client, Client
 
 app = Flask(__name__)
 
+# ИЗМЕНЕНО: добавлен новый домен edupath2
 CORS(app, origins=[
-    "https://edupath1.github.io",
+    "https://edupath2.github.io",
+    "https://edupath1.github.io", # оставил на случай, если понадобится
     "http://localhost:3000",
     "http://localhost:5000"
 ], supports_credentials=True)
@@ -27,24 +29,15 @@ SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
 if not SUPABASE_URL or not SUPABASE_ANON_KEY:
     raise Exception("SUPABASE_URL and SUPABASE_ANON_KEY must be set")
 
-
 def new_client() -> Client:
-    """Свежий клиент на каждый запрос.
-    Общий глобальный клиент нельзя: он хранит сессию последнего вошедшего
-    пользователя, и запросы разных людей перемешиваются."""
+    """Свежий клиент на каждый запрос."""
     return create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-
 
 # ============================================================
 # АВТОРИЗАЦИЯ
 # ============================================================
 
 def get_user_and_client():
-    """Проверяет токен и возвращает (user, client).
-    client отправляет запросы в базу ОТ ИМЕНИ пользователя (его JWT),
-    поэтому в политиках RLS auth.uid() = id пользователя.
-    Раньше JWT не передавался -> auth.uid() был пустым ->
-    'new row violates row-level security policy for table test_results'."""
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         return None, None
@@ -57,14 +50,13 @@ def get_user_and_client():
         client = new_client()
         user_response = client.auth.get_user(token)
         if user_response and user_response.user:
-            client.postgrest.auth(token)  # <-- главное исправление
+            client.postgrest.auth(token)  
             return user_response.user, client
     except Exception:
         print("=== TOKEN ERROR ===")
         print(traceback.format_exc())
 
     return None, None
-
 
 def require_auth(f):
     @wraps(f)
@@ -75,7 +67,6 @@ def require_auth(f):
         return f(user, client, *args, **kwargs)
     return decorated
 
-
 def db_error(label, e):
     print("=== " + label + " ERROR ===")
     print(traceback.format_exc())
@@ -84,15 +75,13 @@ def db_error(label, e):
         return jsonify({"error": "Нет доступа к базе данных (RLS). Сообщи команде."}), 500
     return jsonify({"error": "Ошибка сервера. Попробуй ещё раз."}), 500
 
-
 # ============================================================
-# HEALTH CHECK (его же можно пинговать, чтобы Render не засыпал)
+# HEALTH CHECK
 # ============================================================
 
 @app.route("/", methods=["GET"])
 def health():
     return jsonify({"status": "ok", "service": "EduPath API", "version": "1.1"})
-
 
 # ============================================================
 # AUTH
@@ -105,7 +94,6 @@ def session_payload(session):
         "access_token": session.access_token,
         "refresh_token": session.refresh_token
     }
-
 
 @app.route("/api/register", methods=["POST"])
 def register():
@@ -127,7 +115,6 @@ def register():
             "options": {"data": {"name": name}}
         })
 
-        # Профиль (не критично). Если сессия есть — пишем от имени пользователя.
         if response.user and response.session:
             try:
                 client.postgrest.auth(response.session.access_token)
@@ -155,7 +142,6 @@ def register():
         if "already registered" in msg.lower() or "already exists" in msg.lower():
             return jsonify({"error": "Пользователь с таким email уже существует"}), 400
         return jsonify({"error": msg}), 400
-
 
 @app.route("/api/login", methods=["POST"])
 def login():
@@ -199,12 +185,8 @@ def login():
             return jsonify({"error": "Неверный email или пароль"}), 401
         return jsonify({"error": msg}), 401
 
-
 @app.route("/api/refresh", methods=["POST"])
 def refresh():
-    """Обновляет сессию по refresh_token. Его вызывает auth.js,
-    когда access_token (живёт ~1 час) истёк. Раньше маршрута не было,
-    и через час профиль становился пустым, хотя «Привет, имя» оставалось."""
     data = request.json or {}
     refresh_token = (data.get("refresh_token") or "").strip()
     if not refresh_token:
@@ -236,7 +218,6 @@ def refresh():
         print(traceback.format_exc())
         return jsonify({"error": "Invalid refresh token"}), 401
 
-
 @app.route("/api/resend-confirmation", methods=["POST"])
 def resend_confirmation():
     data = request.json or {}
@@ -252,7 +233,6 @@ def resend_confirmation():
         print(traceback.format_exc())
         return jsonify({"error": str(e)}), 400
 
-
 @app.route("/api/me", methods=["GET"])
 @require_auth
 def me(user, client):
@@ -263,7 +243,6 @@ def me(user, client):
     except Exception:
         pass
     return jsonify({"user": {"id": user.id, "email": user.email, "name": name}})
-
 
 # ============================================================
 # SAVED UNIVERSITIES
@@ -278,7 +257,6 @@ def get_saved(user, client):
         return jsonify({"saved": response.data or []})
     except Exception as e:
         return db_error("GET /api/saved", e)
-
 
 @app.route("/api/saved", methods=["POST"])
 @require_auth
@@ -307,7 +285,6 @@ def add_saved(user, client):
     except Exception as e:
         return db_error("POST /api/saved", e)
 
-
 @app.route("/api/saved/<path:name>", methods=["DELETE"])
 @require_auth
 def remove_saved(user, client, name):
@@ -317,7 +294,6 @@ def remove_saved(user, client, name):
         return jsonify({"ok": True, "removed": True})
     except Exception as e:
         return db_error("DELETE /api/saved", e)
-
 
 # ============================================================
 # TEST RESULTS
@@ -332,7 +308,6 @@ def get_tests(user, client):
         return jsonify({"tests": response.data or []})
     except Exception as e:
         return db_error("GET /api/tests", e)
-
 
 @app.route("/api/tests", methods=["POST"])
 @require_auth
@@ -350,7 +325,6 @@ def save_test(user, client):
         return jsonify({"ok": True})
     except Exception as e:
         return db_error("POST /api/tests", e)
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
